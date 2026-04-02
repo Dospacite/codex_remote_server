@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+*.log
+build
+dist
+tests
+codex_remote_server.egg-info
