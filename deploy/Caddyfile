@@ -1,0 +1,6 @@
+{$CODEX_REMOTE_DOMAIN} {
+  encode zstd gzip
+  tls {$CODEX_REMOTE_ACME_EMAIL}
+
+  reverse_proxy relay:8787
+}

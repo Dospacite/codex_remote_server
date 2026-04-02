@@ -42,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=int(os.getenv("CODEX_REMOTE_RELAY_WS_HEARTBEAT_SECONDS", "20")),
     )
+    parser.add_argument(
+        "--max-concurrent-clients",
+        type=int,
+        default=int(os.getenv("CODEX_REMOTE_RELAY_MAX_CONCURRENT_CLIENTS", "16384")),
+        help="Maximum number of concurrently authenticated mobile client connections.",
+    )
     return parser
 
 
@@ -57,6 +63,7 @@ def main() -> None:
         claim_ttl_seconds=args.claim_ttl_seconds,
         auth_max_skew_seconds=args.auth_max_skew_seconds,
         ws_heartbeat_seconds=args.ws_heartbeat_seconds,
+        max_concurrent_clients=args.max_concurrent_clients,
     )
     web.run_app(create_app(config), host=config.host, port=config.port)
 

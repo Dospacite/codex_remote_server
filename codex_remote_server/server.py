@@ -31,6 +31,7 @@ class RelayConfig:
     claim_ttl_seconds: int
     auth_max_skew_seconds: int
     ws_heartbeat_seconds: int
+    max_concurrent_clients: int
 
 
 @dataclass(slots=True)
@@ -63,10 +64,21 @@ class RelayRuntime:
         self._sessions: dict[str, RelaySession] = {}
         self._pending_bridge_downloads: dict[str, PendingBridgeDownload] = {}
 
-    async def register(self, peer: AuthenticatedPeer) -> RelaySession | None:
+    async def register(
+        self,
+        peer: AuthenticatedPeer,
+        *,
+        max_concurrent_clients: int,
+    ) -> RelaySession | None:
         async with self._lock:
             device_peers = self._peers.setdefault(peer.device_id, {})
             previous = device_peers.get(peer.role)
+            if (
+                peer.role == "client"
+                and previous is None
+                and self._client_connection_count_locked() >= max_concurrent_clients
+            ):
+                raise web.HTTPTooManyRequests(text="Concurrent client limit reached.")
             if previous is not None and previous.ws is not peer.ws:
                 await previous.ws.close(message=b"Superseded by newer connection.")
             device_peers[peer.role] = peer
@@ -82,6 +94,9 @@ class RelayRuntime:
             )
             self._sessions[peer.device_id] = session
             return session
+
+    def _client_connection_count_locked(self) -> int:
+        return sum(1 for peers in self._peers.values() if "client" in peers)
 
     async def unregister(self, device_id: str, role: str, ws: web.WebSocketResponse) -> None:
         counterpart_ws: web.WebSocketResponse | None = None
@@ -447,7 +462,10 @@ async def relay_ws(request: web.Request) -> web.StreamResponse:
                 "signedAt": session_signed_at,
             },
         )
-        session = await runtime.register(peer)
+        session = await runtime.register(
+            peer,
+            max_concurrent_clients=config.max_concurrent_clients,
+        )
         await ws.send_json(
             {
                 "deviceId": device_id,

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from aiohttp import web
 
+from codex_remote_server.__main__ import build_parser
 from codex_remote_server.server import AuthenticatedPeer, RelayRuntime
 from codex_remote_server.store import DeviceRecord
 
@@ -59,8 +61,8 @@ class RelayRuntimeTests(unittest.IsolatedAsyncioTestCase):
             device=self.device,
             session_bundle={"sessionPublicKey": "d", "sessionNonce": "e", "signature": "f", "signedAt": 1},
         )
-        self.assertIsNone(await runtime.register(bridge))
-        session = await runtime.register(client)
+        self.assertIsNone(await runtime.register(bridge, max_concurrent_clients=10))
+        session = await runtime.register(client, max_concurrent_clients=10)
         assert session is not None
 
         await runtime.forward(
@@ -98,8 +100,8 @@ class RelayRuntimeTests(unittest.IsolatedAsyncioTestCase):
             device=self.device,
             session_bundle={"sessionPublicKey": "d", "sessionNonce": "e", "signature": "f", "signedAt": 1},
         )
-        self.assertIsNone(await runtime.register(bridge))
-        session = await runtime.register(client)
+        self.assertIsNone(await runtime.register(bridge, max_concurrent_clients=10))
+        session = await runtime.register(client, max_concurrent_clients=10)
         assert session is not None
 
         await runtime.unregister("device", "bridge", bridge_ws)
@@ -115,3 +117,65 @@ class RelayRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         )
+
+    async def test_register_rejects_new_client_when_limit_reached(self) -> None:
+        runtime = RelayRuntime()
+        bridge_one = AuthenticatedPeer(
+            device_id="device-1",
+            role="bridge",
+            ws=_FakeWebSocket(),
+            device=self.device,
+            session_bundle={"sessionPublicKey": "a", "sessionNonce": "b", "signature": "c", "signedAt": 1},
+        )
+        client_one = AuthenticatedPeer(
+            device_id="device-1",
+            role="client",
+            ws=_FakeWebSocket(),
+            device=self.device,
+            session_bundle={"sessionPublicKey": "d", "sessionNonce": "e", "signature": "f", "signedAt": 1},
+        )
+        second_device = DeviceRecord(
+            device_id="device-2",
+            bridge_label="bridge",
+            bridge_signing_public_key="bridge-key",
+            bridge_fingerprint="fingerprint",
+            client_signing_public_key="client-key",
+            client_label="client",
+            claim_token_hash=None,
+            claim_token_salt=None,
+            claim_expires_at=None,
+            claimed_at=1,
+        )
+        bridge_two = AuthenticatedPeer(
+            device_id="device-2",
+            role="bridge",
+            ws=_FakeWebSocket(),
+            device=second_device,
+            session_bundle={"sessionPublicKey": "g", "sessionNonce": "h", "signature": "i", "signedAt": 1},
+        )
+        client_two = AuthenticatedPeer(
+            device_id="device-2",
+            role="client",
+            ws=_FakeWebSocket(),
+            device=second_device,
+            session_bundle={"sessionPublicKey": "j", "sessionNonce": "k", "signature": "l", "signedAt": 1},
+        )
+
+        self.assertIsNone(await runtime.register(bridge_one, max_concurrent_clients=1))
+        self.assertIsNotNone(await runtime.register(client_one, max_concurrent_clients=1))
+        self.assertIsNone(await runtime.register(bridge_two, max_concurrent_clients=1))
+
+        with self.assertRaises(web.HTTPTooManyRequests):
+            await runtime.register(client_two, max_concurrent_clients=1)
+
+
+class ParserTests(unittest.TestCase):
+    def test_public_base_url_defaults_from_environment(self) -> None:
+        with mock.patch.dict(
+            "os.environ",
+            {"CODEX_REMOTE_RELAY_PUBLIC_BASE_URL": "https://relay.actual.example"},
+            clear=False,
+        ):
+            parser = build_parser()
+            args = parser.parse_args([])
+        self.assertEqual(args.public_base_url, "https://relay.actual.example")

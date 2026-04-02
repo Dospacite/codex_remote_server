@@ -19,5 +19,8 @@ USER app
 EXPOSE 8787
 VOLUME ["/data"]
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/healthz', timeout=3).read()"
+
 ENTRYPOINT ["codex-remote-server"]
-CMD ["--host", "0.0.0.0", "--port", "8787", "--db-path", "/data/relay.sqlite3", "--public-base-url", "https://relay.example.com"]
+CMD ["--host", "0.0.0.0", "--port", "8787", "--db-path", "/data/relay.sqlite3"]
