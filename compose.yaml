@@ -12,28 +12,10 @@ services:
       CODEX_REMOTE_RELAY_AUTH_MAX_SKEW_SECONDS: ${CODEX_REMOTE_RELAY_AUTH_MAX_SKEW_SECONDS:-60}
       CODEX_REMOTE_RELAY_WS_HEARTBEAT_SECONDS: ${CODEX_REMOTE_RELAY_WS_HEARTBEAT_SECONDS:-20}
       CODEX_REMOTE_RELAY_MAX_CONCURRENT_CLIENTS: ${CODEX_REMOTE_RELAY_MAX_CONCURRENT_CLIENTS:-16384}
+    ports:
+      - "127.0.0.1:8787:8787"
     volumes:
       - relay_data:/data
-    expose:
-      - "8787"
-
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    depends_on:
-      - relay
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      CODEX_REMOTE_DOMAIN: ${CODEX_REMOTE_DOMAIN}
-      CODEX_REMOTE_ACME_EMAIL: ${CODEX_REMOTE_ACME_EMAIL}
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
 
 volumes:
   relay_data:
-  caddy_data:
-  caddy_config:

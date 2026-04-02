@@ -24,22 +24,13 @@ It is intentionally small: it handles bridge enrollment, device claiming, authen
 The repository includes a production-oriented Docker Compose stack:
 
 - `compose.yaml`
-- `compose.nginx.yaml`
-- `deploy/Caddyfile`
 - `.env.example`
 
-Recommended topology:
-
-- `caddy` terminates TLS on `:80` and `:443`
-- `relay` listens only on the internal Docker network
+- host `nginx` terminates TLS on the VPS
+- `docker compose up -d --build` publishes the relay only on `127.0.0.1:8787`
+- host `nginx` proxies `cr.rousoftware.com` or another relay domain to `http://127.0.0.1:8787`
 - SQLite lives on a persistent Docker volume
 - the public relay URL is `https://your-domain`
-
-Alternative topology:
-
-- host `nginx` terminates TLS on the VPS
-- `docker compose -f compose.nginx.yaml up -d --build` publishes the relay only on `127.0.0.1:8787`
-- host `nginx` proxies `cr.rousoftware.com` or another relay domain to `http://127.0.0.1:8787`
 
 ### VPS checklist
 
@@ -49,14 +40,6 @@ Alternative topology:
 4. Clone this repository onto the VPS.
 5. Copy `.env.example` to `.env` and fill in real values.
 6. Start the stack with `docker compose up -d --build`.
-
-If you already run `nginx` on the host and do not want a Caddy container, use:
-
-```bash
-cp .env.example .env
-docker compose -f compose.nginx.yaml up -d --build
-docker compose -f compose.nginx.yaml logs -f
-```
 
 ### Example deployment
 
@@ -69,7 +52,6 @@ docker compose logs -f
 Required `.env` values:
 
 - `CODEX_REMOTE_DOMAIN`: public DNS name for the relay, for example `relay.example.com`
-- `CODEX_REMOTE_ACME_EMAIL`: email address used for Let's Encrypt
 - `CODEX_REMOTE_RELAY_ENROLL_TOKEN`: long random bootstrap secret for bridge enrollment
 
 Adjustable capacity control:
@@ -94,7 +76,6 @@ Use that exact URL in bridge configuration. It is also the URL embedded into pai
 The compose stack uses named volumes for:
 
 - relay SQLite data
-- Caddy certificates and config
 
 Do not keep the SQLite database only inside the container filesystem if you want the relay to survive container recreation.
 

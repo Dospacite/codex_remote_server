@@ -13,8 +13,6 @@ pip-wheel-metadata/
 .DS_Store
 .env
 .env.local
-caddy_config/
-caddy_data/
 relay_data/
 relay.sqlite3
 smoke.sqlite3
