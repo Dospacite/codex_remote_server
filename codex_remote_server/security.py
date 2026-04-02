@@ -118,6 +118,26 @@ def auth_payload(
     )
 
 
+def pairing_refresh_payload(
+    *,
+    device_id: str,
+    bridge_label: str,
+    bridge_signing_public_key: str,
+    request_nonce: str,
+    request_timestamp: int,
+) -> bytes:
+    return canonical_json(
+        {
+            "bridgeLabel": bridge_label,
+            "bridgeSigningPublicKey": bridge_signing_public_key,
+            "deviceId": device_id,
+            "requestNonce": request_nonce,
+            "requestTimestamp": request_timestamp,
+            "type": "codex-remote-pairing-refresh-v1",
+        }
+    )
+
+
 @dataclass(slots=True)
 class PairingCodePayload:
     device_id: str

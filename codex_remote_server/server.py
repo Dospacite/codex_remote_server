@@ -13,6 +13,7 @@ from .security import (
     PairingCodePayload,
     auth_payload,
     is_valid_public_signing_key,
+    pairing_refresh_payload,
     random_token,
     session_bundle_payload,
     utc_now,
@@ -235,6 +236,7 @@ def create_app(config: RelayConfig) -> web.Application:
     app["runtime"] = RelayRuntime()
     app.router.add_get("/healthz", healthz)
     app.router.add_post("/api/v1/bridge/enroll", enroll_bridge)
+    app.router.add_post("/api/v1/bridge/pairing-code", refresh_bridge_pairing_code)
     app.router.add_post("/api/v1/device/claim", claim_device)
     app.router.add_get("/api/v1/bridge-download/{device_id}/{token}", bridge_download)
     app.router.add_get("/ws", relay_ws)
@@ -322,6 +324,65 @@ async def claim_device(request: web.Request) -> web.Response:
             "bridgeSigningPublicKey": claimed.bridge_signing_public_key,
             "clientLabel": claimed.client_label,
             "deviceId": claimed.device_id,
+        }
+    )
+
+
+async def refresh_bridge_pairing_code(request: web.Request) -> web.Response:
+    config: RelayConfig = request.app["config"]
+    payload = await request.json()
+    device_id = _read_json_body(payload, "deviceId")
+    bridge_label = _read_json_body(payload, "bridgeLabel")
+    bridge_signing_public_key = _read_json_body(payload, "bridgeSigningPublicKey")
+    request_nonce = _read_json_body(payload, "requestNonce")
+    request_signature = _read_json_body(payload, "requestSignature")
+    request_timestamp = int(payload.get("requestTimestamp", 0))
+    if abs(utc_now() - request_timestamp) > config.auth_max_skew_seconds:
+        raise web.HTTPUnauthorized(text="Refresh timestamp is too old.")
+    if not is_valid_public_signing_key(bridge_signing_public_key):
+        raise web.HTTPBadRequest(text="Invalid bridge signing public key.")
+
+    store: DeviceStore = request.app["store"]
+    record = store.get_device(device_id)
+    if record is None:
+        raise web.HTTPNotFound(text="Unknown device.")
+    if record.bridge_signing_public_key != bridge_signing_public_key:
+        raise web.HTTPConflict(text="Bridge identity mismatch.")
+    if not verify_signature(
+        bridge_signing_public_key,
+        request_signature,
+        pairing_refresh_payload(
+            device_id=device_id,
+            bridge_label=bridge_label,
+            bridge_signing_public_key=bridge_signing_public_key,
+            request_nonce=request_nonce,
+            request_timestamp=request_timestamp,
+        ),
+    ):
+        raise web.HTTPUnauthorized(text="Refresh signature rejected.")
+
+    try:
+        refreshed, claim_token = store.refresh_pairing_code(
+            device_id=device_id,
+            claim_ttl_seconds=config.claim_ttl_seconds,
+        )
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from exc
+    pairing_code = PairingCodePayload(
+        device_id=refreshed.device_id,
+        relay_url=config.public_base_url.rstrip("/"),
+        claim_token=claim_token,
+        bridge_signing_public_key=refreshed.bridge_signing_public_key,
+        bridge_label=refreshed.bridge_label,
+        expires_at=refreshed.claim_expires_at or utc_now(),
+    ).encode()
+    return web.json_response(
+        {
+            "bridgeFingerprint": refreshed.bridge_fingerprint,
+            "bridgeLabel": refreshed.bridge_label,
+            "deviceId": refreshed.device_id,
+            "pairingCode": pairing_code,
+            "pairingExpiresAt": refreshed.claim_expires_at,
         }
     )
 

@@ -139,6 +139,41 @@ class DeviceStore:
             claimed_at=row["claimed_at"],
         )
 
+    def refresh_pairing_code(
+        self,
+        *,
+        device_id: str,
+        claim_ttl_seconds: int,
+    ) -> tuple[DeviceRecord, str]:
+        record = self.get_device(device_id)
+        if record is None:
+            raise ValueError("Unknown device.")
+        claim_token = random_token(24)
+        claim_salt = random_token(16)
+        now = utc_now()
+        claim_token_hash = scrypt_hash(claim_token, salt=claim_salt.encode("utf-8"))
+        claim_expires_at = now + claim_ttl_seconds
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE devices
+                SET
+                    claim_token_hash = ?,
+                    claim_token_salt = ?,
+                    claim_expires_at = ?
+                WHERE device_id = ?
+                """,
+                (
+                    claim_token_hash,
+                    claim_salt,
+                    claim_expires_at,
+                    device_id,
+                ),
+            )
+        refreshed = self.get_device(device_id)
+        assert refreshed is not None
+        return refreshed, claim_token
+
     def claim_device(
         self,
         *,

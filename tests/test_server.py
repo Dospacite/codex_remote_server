@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from unittest import mock
 
@@ -7,7 +8,7 @@ from aiohttp import web
 
 from codex_remote_server.__main__ import build_parser
 from codex_remote_server.server import AuthenticatedPeer, RelayRuntime
-from codex_remote_server.store import DeviceRecord
+from codex_remote_server.store import DeviceRecord, DeviceStore
 
 
 class _FakeWebSocket:
@@ -179,3 +180,26 @@ class ParserTests(unittest.TestCase):
             parser = build_parser()
             args = parser.parse_args([])
         self.assertEqual(args.public_base_url, "https://relay.actual.example")
+
+
+class DeviceStoreTests(unittest.TestCase):
+    def test_refresh_pairing_code_rotates_claim_material_for_existing_device(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            store = DeviceStore(f"{tempdir}/relay.sqlite3")
+            record, original_claim_token = store.enroll_device(
+                bridge_label="bridge",
+                bridge_signing_public_key="bridge-key",
+                claim_ttl_seconds=900,
+            )
+
+            refreshed, refreshed_claim_token = store.refresh_pairing_code(
+                device_id=record.device_id,
+                claim_ttl_seconds=900,
+            )
+
+            self.assertEqual(refreshed.device_id, record.device_id)
+            self.assertEqual(refreshed.bridge_signing_public_key, record.bridge_signing_public_key)
+            self.assertNotEqual(refreshed_claim_token, original_claim_token)
+            self.assertIsNotNone(refreshed.claim_token_hash)
+            self.assertIsNotNone(refreshed.claim_token_salt)
+            self.assertIsNotNone(refreshed.claim_expires_at)
