@@ -47,6 +47,22 @@ jobs:
             git checkout main
             git reset --hard "${{ github.sha }}"
             COMPOSE_PROJECT_NAME=codex_remote_server docker compose up -d --build
-            curl -fsS --max-time 10 http://127.0.0.1:8787/healthz >/dev/null
-            curl -fsS --max-time 15 https://cr.rousoftware.com/healthz >/dev/null
+            local_ok=0
+            for i in $(seq 1 20); do
+              if curl -fsS --max-time 10 http://127.0.0.1:8787/healthz >/dev/null; then
+                local_ok=1
+                break
+              fi
+              sleep 2
+            done
+            test "$local_ok" -eq 1
+            public_ok=0
+            for i in $(seq 1 20); do
+              if curl -fsS --max-time 15 https://cr.rousoftware.com/healthz >/dev/null; then
+                public_ok=1
+                break
+              fi
+              sleep 2
+            done
+            test "$public_ok" -eq 1
           '
