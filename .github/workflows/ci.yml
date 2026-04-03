@@ -37,32 +37,42 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H services.rousoftware.com >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/known_hosts <<'EOF'
+          |1|YlVLff6pbdvu+meY0OjXL/+SwxM=|N3FdOVAb/X57QzeL462OfaLOTtk= ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCuF4MU5W6nfM0dgXwWEnWXJGeRtUSZkuZI48wg7XNROIhyt3v5C7tD90SBCOTA+nrhFnHr0cYASYNfqIcvDDFzknznYmcSm9nCeet6Qx0lJeXEr+vRTkG9Cdt4fsC8VOl92PFQRsLB3+xM+6lSI/z8nDNM5xmF0E+ZWLBtgabLBZw0uS0xCSRUcTind6K9GNqrlTyMtXKhk6HGTGd0zD8BS5db+ufrID6JQ0AWhv9gsqKOxxezHdzTQmmkvCxshZqf6RrzGhS8mMODZ/ro+AkhR3fWmzok9LjGflyezgg/9oKntQ3dhgnf+4la8APyhsQhcjSWATUxkq18uodrU2SI+80SaCu5OXhRfzUXyu9E9E+jusco/0ts3MjoiVFD7zfBcRoi6RkLQkC0skb4DODAC9pEpRtIs8tyD+FB+fdsIeMkqPrT9/BP3HURmyVEQuAPXGfY0xJmM8gZtZTRARmi23rAcElbjzd0gvsgcgJzNsurSSPe3y2xB4uePEsPe7s=
+          |1|MnrwxIH1nBzA1xi0G8EZRfO9i7M=|g3p8YXGplgi57EgmQv5hAUvaWU8= ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBGM+2TVtpCgrbUudFMDpfgPOxAP2OwO75dpegTZOTuB/Jsj0dg3cyBjb7k/waOuwH1TsdEFM95YLMBT9defY5GE=
+          |1|Cf/cG7pEHdiHqVaDdiE8SXL1WSo=|JI0JLPdOfdGJ3KtwImNUGE4vF7s= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINZMT7YHsS5qRX/ciXTbLxKZVCgpJS7m/L9Nwgr3RNZS
+          EOF
       - name: Deploy to services.rousoftware.com
         run: |
-          ssh ege@services.rousoftware.com '
-            set -euo pipefail
-            cd /home/ege/apps/codex_remote_server
-            git fetch --prune origin
-            git checkout main
-            git reset --hard "${{ github.sha }}"
-            COMPOSE_PROJECT_NAME=codex_remote_server docker compose up -d --build
-            local_ok=0
-            for i in $(seq 1 20); do
-              if curl -fsS --max-time 10 http://127.0.0.1:8787/healthz >/dev/null; then
-                local_ok=1
-                break
-              fi
-              sleep 2
-            done
-            test "$local_ok" -eq 1
-            public_ok=0
-            for i in $(seq 1 20); do
-              if curl -fsS --max-time 15 https://cr.rousoftware.com/healthz >/dev/null; then
-                public_ok=1
-                break
-              fi
-              sleep 2
-            done
-            test "$public_ok" -eq 1
-          '
+          for attempt in 1 2 3 4 5; do
+            if ssh -o ConnectTimeout=10 ege@services.rousoftware.com '
+              set -euo pipefail
+              cd /home/ege/apps/codex_remote_server
+              git fetch --prune origin
+              git checkout main
+              git reset --hard "${{ github.sha }}"
+              COMPOSE_PROJECT_NAME=codex_remote_server docker compose up -d --build
+              local_ok=0
+              for i in $(seq 1 20); do
+                if curl -fsS --max-time 10 http://127.0.0.1:8787/healthz >/dev/null; then
+                  local_ok=1
+                  break
+                fi
+                sleep 2
+              done
+              test "$local_ok" -eq 1
+              public_ok=0
+              for i in $(seq 1 20); do
+                if curl -fsS --max-time 15 https://cr.rousoftware.com/healthz >/dev/null; then
+                  public_ok=1
+                  break
+                fi
+                sleep 2
+              done
+              test "$public_ok" -eq 1
+            '; then
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
