@@ -19,7 +19,34 @@ jobs:
         run: python -m unittest discover -s tests
   docker:
     runs-on: ubuntu-latest
+    needs: test
     steps:
       - uses: actions/checkout@v4
       - name: Build container
         run: docker build .
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [test, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.DEPLOY_SSH_KEY != ''
+    concurrency:
+      group: codex-remote-server-production
+      cancel-in-progress: false
+    steps:
+      - name: Set up SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H services.rousoftware.com >> ~/.ssh/known_hosts
+      - name: Deploy to services.rousoftware.com
+        run: |
+          ssh ege@services.rousoftware.com '
+            set -euo pipefail
+            cd /home/ege/apps/codex_remote_server
+            git fetch --prune origin
+            git checkout main
+            git reset --hard "${{ github.sha }}"
+            COMPOSE_PROJECT_NAME=codex_remote_server docker compose up -d --build
+            curl -fsS --max-time 10 http://127.0.0.1:8787/healthz >/dev/null
+            curl -fsS --max-time 15 https://cr.rousoftware.com/healthz >/dev/null
+          '
